@@ -1,0 +1,28 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle (for SVG preview) -->
+  <rect width="512" height="512" rx="128" fill="#F5F5F5"/>
+  
+  <!-- The Loaf Body -->
+  <rect x="106" y="180" width="300" height="180" rx="90" fill="#FFCC80"/>
+  <rect x="106" y="270" width="300" height="90" rx="45" fill="#FFA726" fill-opacity="0.2"/>
+  
+  <!-- Ears -->
+  <path d="M160 185L135 130L110 185H160Z" fill="#FFCC80"/>
+  <path d="M402 185L377 130L352 185H402Z" fill="#FFCC80"/>
+  
+  <!-- Face -->
+  <circle cx="210" cy="250" r="10" fill="#4E342E"/>
+  <circle cx="302" cy="250" r="10" fill="#4E342E"/>
+  
+  <!-- Tiny W Mouth -->
+  <path d="M240 270C240 270 245 280 256 280C267 280 272 270 272 270" stroke="#4E342E" stroke-width="6" stroke-linecap="round"/>
+  <path d="M224 270C224 270 229 280 240 280C251 280 256 270 256 270" stroke="#4E342E" stroke-width="6" stroke-linecap="round"/>
+  
+  <!-- Blush -->
+  <circle cx="170" cy="275" r="15" fill="#FFAB91" fill-opacity="0.4"/>
+  <circle cx="342" cy="275" r="15" fill="#FFAB91" fill-opacity="0.4"/>
+  
+  <!-- Little Paws -->
+  <circle cx="150" cy="350" r="25" fill="#FFF3E0"/>
+  <circle cx="362" cy="350" r="25" fill="#FFF3E0"/>
+</svg>
