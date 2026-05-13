@@ -15,7 +15,7 @@ class HomeScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final themeProvider = Provider.of<ThemeProvider>(context);
-    final profileProvider = Provider.of<ProfileProvider>(context);
+    // final profileProvider = Provider.of<ProfileProvider>(context);
 
     final isMidnight = themeProvider.currentTheme == DustyTheme.midnight;
     final textColor = isMidnight ? Colors.white : const Color(0xFF0F172A);
@@ -72,6 +72,7 @@ class HomeScreen extends StatelessWidget {
                             ],
                           ),
                           const SizedBox(height: 32),
+                          /*
                           Text(
                             'Active Profile',
                             style: Theme.of(context).textTheme.titleMedium?.copyWith(color: textColor),
@@ -79,13 +80,14 @@ class HomeScreen extends StatelessWidget {
                           const SizedBox(height: 16),
                           _buildProfileSelector(context, profileProvider, textColor),
                           const SizedBox(height: 32),
+                          */
                           Text(
                             'Game Modes',
                             style: Theme.of(context).textTheme.titleMedium?.copyWith(color: textColor),
                           ),
                           const SizedBox(height: 16),
                           _buildGameGrid(context, textColor),
-                          const SizedBox(height: 80), // Extra room for navigation bar
+                          const SizedBox(height: 24), // Reduced space for bottom alignment
                         ],
                       ),
                     ),
@@ -199,6 +201,16 @@ class HomeScreen extends StatelessWidget {
         'mode': GameMode.stringFeather,
         'name': 'String & Feather',
         'icon': Icons.gesture,
+      },
+      {
+        'mode': GameMode.whackAMouse,
+        'name': 'Whack a Mouse',
+        'icon': Icons.pets,
+      },
+      {
+        'mode': GameMode.fishTank,
+        'name': 'Fish Tank',
+        'icon': Icons.water,
       },
     ];
 

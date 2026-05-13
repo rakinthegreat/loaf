@@ -4,6 +4,8 @@ enum GameMode {
   laserPath,
   pondSkater,
   stringFeather,
+  whackAMouse,
+  fishTank,
 }
 
 class GameState {

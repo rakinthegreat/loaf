@@ -18,4 +18,9 @@
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
+
+    <style name="HydroSyncDialog" parent="Theme.Material3.DayNight.Dialog">
+        <item name="colorPrimary">#FF000000</item>
+        <item name="colorSecondary">#FF444444</item>
+    </style>
 </resources>

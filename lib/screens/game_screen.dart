@@ -100,6 +100,8 @@ class GameScreen extends StatelessWidget {
       case GameMode.laserPath: return 'Laser Path';
       case GameMode.pondSkater: return 'Pond Skater';
       case GameMode.stringFeather: return 'String & Feather';
+      case GameMode.whackAMouse: return 'Whack a Mouse';
+      case GameMode.fishTank: return 'Fish Tank';
     }
   }
 }

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import '../models/game_state.dart';
 import '../services/sound_service.dart';
@@ -103,6 +104,12 @@ class _GameCanvasState extends State<GameCanvas>
       case GameMode.stringFeather:
         StringFeatherPainter.handleTap(pos);
         break;
+      case GameMode.whackAMouse:
+        WhackAMousePainter.handleTap(pos);
+        break;
+      case GameMode.fishTank:
+        FishTankPainter.handleTap(pos);
+        break;
     }
   }
 
@@ -132,6 +139,10 @@ class _GameCanvasState extends State<GameCanvas>
           _accelX,
           _accelY,
         );
+      case GameMode.whackAMouse:
+        return WhackAMousePainter(_touchPosition, _isTouching, _controller.value);
+      case GameMode.fishTank:
+        return FishTankPainter(_touchPosition, _isTouching, _controller.value);
     }
     // Fallback to prevent null return
     return UnderTheRugPainter(_touchPosition, _isTouching, _controller.value);
@@ -156,8 +167,14 @@ class Particle {
 class Ripple {
   Offset pos;
   double radius = 0;
-  double opacity = 1.0;
+  double life = 1.0;
+
   Ripple(this.pos);
+
+  void update() {
+    radius += 4;
+    life -= 0.02;
+  }
 }
 
 // --- PAINTERS ---
@@ -393,7 +410,7 @@ class BugSwarmPainter extends CustomPainter {
   final bool isTouching;
   final double time;
 
-  static List<Bug> bugs = List.generate(5, (_) => Bug());
+  static List<Bug> bugs = List.generate(3, (_) => Bug());
   static List<Particle> particles = [];
 
   BugSwarmPainter(this.touch, this.isTouching, this.time);
@@ -419,7 +436,7 @@ class BugSwarmPainter extends CustomPainter {
         bugs.removeAt(i);
         // Respawn later only if we have room
         Future.delayed(const Duration(seconds: 2), () {
-          if (bugs.length < 5) bugs.add(Bug());
+          if (bugs.length < 3) bugs.add(Bug());
         });
         break;
       }
@@ -474,148 +491,103 @@ class BugSwarmPainter extends CustomPainter {
   }
 
   void _drawBug(Canvas canvas, Bug bug, double time) {
-    final bugPaint = Paint()..color = bug.color;
     final bodyWidth = bug.size;
     final bodyHeight = bug.size * 1.4;
 
     canvas.save();
     canvas.translate(bug.pos.dx, bug.pos.dy);
-    canvas.rotate(math.atan2(bug.vel.dy, bug.vel.dx) + math.pi / 2);
+    canvas.rotate(bug.rotation);
 
-    // Glow for Fireflies
+    // Glow/Aura for Fireflies
     if (bug.type == BugType.firefly) {
       final glowPaint = Paint()
-        ..color = Colors.yellow.withOpacity(0.5 + math.sin(time * 10) * 0.3)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 15);
-      canvas.drawCircle(Offset(0, bodyHeight / 2), bodyWidth, glowPaint);
+        ..color = Colors.yellow.withOpacity(0.4 + math.sin(time * 8) * 0.2)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
+      canvas.drawCircle(Offset(0, bodyHeight * 0.3), bodyWidth * 1.5, glowPaint);
     }
+
+    final bodyPaint = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          bug.color,
+          Color.lerp(bug.color, Colors.black, 0.4)!,
+        ],
+        center: const Alignment(-0.3, -0.3),
+      ).createShader(Rect.fromCenter(center: Offset.zero, width: bodyWidth, height: bodyHeight));
 
     switch (bug.type) {
       case BugType.beetle:
-        canvas.drawOval(
-          Rect.fromCenter(
-            center: Offset.zero,
-            width: bodyWidth,
-            height: bodyHeight,
-          ),
-          bugPaint,
-        );
-        canvas.drawLine(
-          const Offset(0, -5),
-          const Offset(0, 5),
-          Paint()
-            ..color = Colors.black45
-            ..strokeWidth = 3,
-        );
+        // Segmented Shell
+        canvas.drawOval(Rect.fromCenter(center: Offset.zero, width: bodyWidth, height: bodyHeight), bodyPaint);
+        // Wing Split
+        final linePaint = Paint()..color = Colors.black.withOpacity(0.3)..strokeWidth = 2;
+        canvas.drawLine( Offset(0, -bodyHeight * 0.3),  Offset(0, bodyHeight * 0.5), linePaint);
         break;
+
       case BugType.moth:
-        canvas.drawOval(
-          Rect.fromCenter(
-            center: Offset.zero,
-            width: bodyWidth * 0.6,
-            height: bodyHeight,
-          ),
-          bugPaint,
-        );
-        final wingPaint = Paint()..color = bug.color.withOpacity(0.4);
-        final wingSweep = math.sin(time * 30) * 0.6;
-        canvas.drawOval(
-          Rect.fromLTWH(bodyWidth * 0.3, -15, 35, 30 + wingSweep * 15),
-          wingPaint,
-        );
-        canvas.drawOval(
-          Rect.fromLTWH(-bodyWidth * 0.3 - 35, -15, 35, 30 + wingSweep * 15),
-          wingPaint,
-        );
-        break;
-      case BugType.crawler:
-        for (int i = 0; i < 3; i++) {
-          canvas.drawCircle(
-            Offset(0.0, (i * 10.0) - 10.0),
-            bodyWidth / 2.0,
-            bugPaint,
-          );
+        // Fuzzy Wing Logic
+        final wingPaint = Paint()
+          ..color = bug.color.withOpacity(0.5)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
+        final flap = math.sin(time * 25) * 0.5;
+        
+        for (int i = -1; i <= 1; i += 2) {
+          canvas.save();
+          canvas.scale(i.toDouble(), 1.0);
+          canvas.rotate(flap);
+          final wingPath = Path();
+          wingPath.moveTo(2, -5);
+          wingPath.quadraticBezierTo(40, -40, 50, 10);
+          wingPath.quadraticBezierTo(40, 40, 2, 5);
+          canvas.drawPath(wingPath, wingPaint);
+          canvas.restore();
         }
-        final legPaint = Paint()
-          ..color = Colors.black
-          ..strokeWidth = 2.5;
-        for (int i = 0; i < 3; i++) {
-          final double legY = (i * 10.0) - 10.0;
-          canvas.drawLine(
-            Offset(0.0, legY),
-            Offset(20.0, legY + math.sin(time * 12 + i) * 8),
-            legPaint,
-          );
-          canvas.drawLine(
-            Offset(0.0, legY),
-            Offset(-20.0, legY + math.sin(time * 12 + i) * 8),
-            legPaint,
-          );
-        }
+        canvas.drawOval(Rect.fromCenter(center: Offset.zero, width: bodyWidth * 0.6, height: bodyHeight), bodyPaint);
         break;
+
       case BugType.cockroach:
-        // Flat brown body
-        canvas.drawOval(
-          Rect.fromCenter(
-            center: Offset.zero,
-            width: bodyWidth,
-            height: bodyHeight * 1.2,
-          ),
-          bugPaint,
-        );
-        // Long antennas
-        final antPaint = Paint()
-          ..color = Colors.black54
-          ..strokeWidth = 1.5
-          ..style = PaintingStyle.stroke;
-        final path = Path();
-        path.moveTo(-2, -bodyHeight / 2);
-        path.quadraticBezierTo(
-          -10,
-          -bodyHeight,
-          -20 - math.sin(time * 5) * 10,
-          -bodyHeight - 20,
-        );
-        path.moveTo(2, -bodyHeight / 2);
-        path.quadraticBezierTo(
-          10,
-          -bodyHeight,
-          20 + math.sin(time * 5) * 10,
-          -bodyHeight - 20,
-        );
-        canvas.drawPath(path, antPaint);
+        // Tapered segmented body
+        final roachPath = Path();
+        roachPath.moveTo(0, -bodyHeight * 0.6);
+        roachPath.quadraticBezierTo(bodyWidth * 0.6, 0, 0, bodyHeight * 0.6);
+        roachPath.quadraticBezierTo(-bodyWidth * 0.6, 0, 0, -bodyHeight * 0.6);
+        canvas.drawPath(roachPath, bodyPaint);
+        
+        // Long wavy antennas
+        final antPaint = Paint()..color = Colors.black45..style = PaintingStyle.stroke..strokeWidth = 1.2;
+        for (int i = -1; i <= 1; i += 2) {
+           final antPath = Path();
+           antPath.moveTo(i * 3, -bodyHeight * 0.5);
+           antPath.quadraticBezierTo(i * 20, -bodyHeight, i * (30 + math.sin(time * 5) * 10), -bodyHeight - 30);
+           canvas.drawPath(antPath, antPaint);
+        }
         break;
+
       case BugType.firefly:
-        // Small dark body
-        canvas.drawOval(
-          Rect.fromCenter(
-            center: Offset.zero,
-            width: bodyWidth * 0.7,
-            height: bodyHeight * 0.8,
-          ),
-          Paint()..color = Colors.black,
-        );
-        // Glowing tail
-        canvas.drawCircle(
-          Offset(0, bodyHeight * 0.3),
-          bodyWidth * 0.4,
-          Paint()..color = Colors.yellowAccent,
-        );
+        canvas.drawOval(Rect.fromCenter(center: Offset.zero, width: bodyWidth * 0.7, height: bodyHeight * 0.8), bodyPaint);
+        // Glowing Tail Segment
+        final tailGlow = Paint()..color = Colors.yellowAccent.withOpacity(0.8 + math.sin(time * 10) * 0.2)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5);
+        canvas.drawCircle(Offset(0, bodyHeight * 0.3), bodyWidth * 0.4, tailGlow);
+        break;
+
+      case BugType.crawler:
+        // Multi-segmented body
+        for (int i = 0; i < 4; i++) {
+          final offset = -bodyHeight * 0.4 + (i * bodyHeight * 0.25);
+          canvas.drawCircle(Offset(0, offset), bodyWidth * (0.5 - i * 0.05), bodyPaint);
+        }
         break;
     }
 
-    // High Contrast Eyes
+    // High Contrast Eyes with Glint
     final eyePaint = Paint()..color = Colors.white;
-    canvas.drawCircle(
-      Offset(-bodyWidth * 0.3, -bodyHeight * 0.4),
-      3.5,
-      eyePaint,
-    );
-    canvas.drawCircle(
-      Offset(bodyWidth * 0.3, -bodyHeight * 0.4),
-      3.5,
-      eyePaint,
-    );
+    final pupilPaint = Paint()..color = Colors.black;
+    for (int i = -1; i <= 1; i += 2) {
+      final eyePos = Offset(i * bodyWidth * 0.3, -bodyHeight * 0.45);
+      canvas.drawCircle(eyePos, 4, eyePaint);
+      canvas.drawCircle(eyePos + const Offset(-1, -1), 2, pupilPaint);
+      canvas.drawCircle(eyePos + const Offset(1, 1), 1, eyePaint); // Glint
+    }
 
     canvas.restore();
   }
@@ -636,22 +608,43 @@ class Bug {
         math.Random().nextDouble() - 0.5,
         math.Random().nextDouble() - 0.5,
       ) *
-      5;
-  Color color = [
-    Colors.black,
-    Colors.deepOrange,
-    Colors.indigo,
-    Colors.brown,
-    Colors.deepPurple,
-  ][math.Random().nextInt(5)];
-  double size = 20.0 + math.Random().nextDouble() * 20.0; // Even bigger
-  BugType type = BugType.values[math.Random().nextInt(BugType.values.length)];
+      3;
+  late Color color;
+  double size = 35.0;
+  BugType type = BugType.beetle;
+  double rotation = 0;
+
+  Bug() {
+    type = BugType.values[math.Random().nextInt(BugType.values.length)];
+    switch (type) {
+      case BugType.beetle:
+        color = Colors.yellowAccent[100]!; 
+        size = 60.0; // Increased from 35
+        break;
+      case BugType.moth:
+        color = Colors.white; 
+        size = 55.0; // Increased from 30
+        break;
+      case BugType.crawler:
+        color = Colors.blueAccent[100]!; 
+        size = 45.0; // Increased from 28
+        break;
+      case BugType.cockroach:
+        color = Colors.yellowAccent[100]!; 
+        size = 75.0; // Increased from 40
+        break;
+      case BugType.firefly:
+        color = Colors.yellowAccent[400]!;
+        size = 35.0; // Increased from 20
+        break;
+    }
+  }
 
   void update(Offset touch, bool isTouching, Size sizeLimit) {
     if (isTouching) {
       final dir = (pos - touch);
       if (dir.distance < 250) {
-        vel += dir / 30; // Scared!
+        vel += dir / 45; // Scared!
       }
     }
 
@@ -676,14 +669,22 @@ class Bug {
       vel = Offset(vel.dx, -vel.dy.abs());
     }
 
-    // Minimum activity
-    if (vel.distance < 2.0) {
-      vel =
-          Offset(
-            math.Random().nextDouble() - 0.5,
-            math.Random().nextDouble() - 0.5,
-          ) *
-          6;
+    // Minimum activity - much smoother to prevent jittering (epilepsy-like movement)
+    if (vel.distance < 1.0) {
+      vel += Offset(
+        (math.Random().nextDouble() - 0.5) * 0.5,
+        (math.Random().nextDouble() - 0.5) * 0.5,
+      );
+    }
+
+    // Smooth rotation update to prevent vibration/jitter
+    if (vel.distance > 0.1) {
+      double targetRotation = math.atan2(vel.dy, vel.dx) + math.pi / 2;
+      double diff = targetRotation - rotation;
+      // Normalize angle difference to [-pi, pi]
+      while (diff > math.pi) diff -= 2 * math.pi;
+      while (diff < -math.pi) diff += 2 * math.pi;
+      rotation += diff * 0.15; // Smooth interpolation factor
     }
   }
 }
@@ -928,16 +929,15 @@ class PondSkaterPainter extends CustomPainter {
 
     // Ripples
     for (int i = ripples.length - 1; i >= 0; i--) {
-      ripples[i].radius += 3;
-      ripples[i].opacity -= 0.02;
-      if (ripples[i].opacity <= 0) {
+      ripples[i].update();
+      if (ripples[i].life <= 0) {
         ripples.removeAt(i);
       } else {
         canvas.drawCircle(
           ripples[i].pos,
           ripples[i].radius,
           Paint()
-            ..color = Colors.white.withOpacity(ripples[i].opacity)
+            ..color = Colors.white.withOpacity(ripples[i].life.clamp(0.0, 1.0))
             ..style = PaintingStyle.stroke
             ..strokeWidth = 2,
         );
@@ -1129,3 +1129,434 @@ class StringFeatherPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
+
+class WhackAMousePainter extends CustomPainter {
+  final Offset touch;
+  final bool isTouching;
+  final double time;
+
+  static List<MouseHole> holes = [];
+  static List<Particle> particles = [];
+  static List<PawEffect> paws = [];
+  static bool initialized = false;
+
+  WhackAMousePainter(this.touch, this.isTouching, this.time);
+
+  void _initialize(Size size) {
+    if (initialized) return;
+    double cellWidth = size.width / 3;
+    double cellHeight = size.height / 4;
+    for (int i = 0; i < 3; i++) {
+      for (int j = 0; j < 4; j++) {
+        holes.add(MouseHole(Offset(
+          cellWidth * (i + 0.5),
+          cellHeight * (j + 0.5 + 0.1), // Offset down slightly to avoid top bar
+        )));
+      }
+    }
+    initialized = true;
+  }
+
+  static void handleTap(Offset pos) {
+    for (var hole in holes) {
+      if (hole.popState > 0.5 && (pos - hole.pos).distance < 70) {
+        // Hit! Reset immediately
+        hole.popState = 0;
+        hole.isUp = false;
+        hole.nextActionTime = DateTime.now().millisecondsSinceEpoch + 2000;
+        
+        SoundService().playWhack();
+        HapticFeedback.heavyImpact();
+        
+        // Add paw effect
+        paws.add(PawEffect(hole.pos));
+        
+        for (int i = 0; i < 15; i++) {
+          particles.add(Particle(
+            hole.pos,
+            Offset(math.Random().nextDouble() - 0.5, math.Random().nextDouble() - 0.5) * 12,
+            Colors.grey,
+          ));
+        }
+      }
+    }
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    _initialize(size);
+    
+    // 1. Cheese Background
+    final cheeseColor = const Color(0xFFFFD54F);
+    final holeColor = const Color(0xFFFFC107);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), Paint()..color = cheeseColor);
+    
+    final rand = math.Random(42);
+    final texturePaint = Paint()..color = holeColor.withOpacity(0.4);
+    for(int i=0; i<25; i++) {
+       canvas.drawCircle(Offset(rand.nextDouble() * size.width, rand.nextDouble() * size.height), 15 + rand.nextDouble() * 40, texturePaint);
+    }
+
+    // 2. Update and Draw Holes/Mice
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final mouseBodyPaint = Paint()..color = Colors.grey[600]!;
+    final eyePaint = Paint()..color = Colors.black;
+    final nosePaint = Paint()..color = Colors.pink[200]!;
+
+    bool anyMouseUp = holes.any((h) => h.isUp || h.popState > 0);
+
+    for (var hole in holes) {
+      if (!hole.isUp && now > hole.nextActionTime && !anyMouseUp) {
+        if (math.Random().nextDouble() < 0.008) { // Slow chance
+          hole.isUp = true;
+          anyMouseUp = true; // Mark as up so other holes don't pop in the same frame
+          hole.stayUpUntil = now + 2000 + math.Random().nextInt(2500); // Stays up longer
+        }
+      }
+      
+      if (hole.isUp && now > hole.stayUpUntil) {
+        hole.isUp = false;
+        hole.nextActionTime = now + 1500 + math.Random().nextInt(3000);
+      }
+
+      if (hole.isUp && hole.popState < 1.0) {
+        hole.popState += 0.04; // Slow pop up
+      } else if (!hole.isUp && hole.popState > 0.0) {
+        hole.popState -= 0.04; // Slow pop down
+      }
+      hole.popState = hole.popState.clamp(0.0, 1.0);
+
+      // 1. Hole Base & Border (Drawn first)
+      canvas.drawCircle(hole.pos, 60, Paint()..color = Colors.black.withOpacity(0.25));
+      canvas.drawCircle(
+        hole.pos, 
+        60, 
+        Paint()..color = holeColor.withOpacity(0.8)..style = PaintingStyle.stroke..strokeWidth = 12
+      );
+      
+      // 2. Draw Mouse (Drawn on top)
+      if (hole.popState > 0) {
+        canvas.save();
+        canvas.translate(hole.pos.dx, hole.pos.dy);
+        canvas.scale(hole.popState);
+        
+        // Mouse Body Gradient (Rounded Look)
+        final mousePaint = Paint()
+          ..shader = RadialGradient(
+            colors: [
+              Colors.grey[400]!,
+              Colors.grey[700]!,
+            ],
+            center: const Alignment(-0.3, -0.3),
+          ).createShader(Rect.fromCircle(center: Offset.zero, radius: 50));
+
+        // Head (High Detail)
+        canvas.drawCircle(Offset.zero, 50, mousePaint);
+        
+        // Ears (Translucent Inner Shading)
+        for (int i = -1; i <= 1; i += 2) {
+          canvas.save();
+          canvas.translate(i * 40, -35);
+          canvas.drawCircle(Offset.zero, 28, mousePaint);
+          canvas.drawCircle(Offset.zero, 18, Paint()..color = Colors.pink[100]!.withOpacity(0.6));
+          canvas.restore();
+        }
+        
+        // Realistic Eyes with Glint
+        final eyePaint = Paint()..color = Colors.black;
+        final glintPaint = Paint()..color = Colors.white;
+        for (int i = -1; i <= 1; i += 2) {
+           final eyePos = Offset(i * 18, -12);
+           canvas.drawCircle(eyePos, 7, eyePaint);
+           canvas.drawCircle(eyePos + const Offset(-2, -2), 2, glintPaint);
+        }
+        
+        // Soft Pink Nose
+        final nosePaint = Paint()
+          ..shader = RadialGradient(
+            colors: [Colors.pink[100]!, Colors.pink[300]!],
+          ).createShader(Rect.fromCircle(center: Offset(0, 12), radius: 10));
+        canvas.drawCircle(const Offset(0, 12), 10, nosePaint);
+        
+        // High Fidelity Whiskers (Tapered)
+        final whiskerPaint = Paint()..color = Colors.black54..strokeWidth = 1.0..strokeCap = StrokeCap.round;
+        for (int i = -1; i <= 1; i += 2) {
+          canvas.drawLine(Offset(i * 15, 12), Offset(i * 60, 5), whiskerPaint);
+          canvas.drawLine(Offset(i * 15, 18), Offset(i * 60, 25), whiskerPaint);
+        }
+        
+        canvas.restore();
+      }
+    }
+
+    // 3. Particles
+    for (int i = particles.length - 1; i >= 0; i--) {
+      particles[i].update();
+      if (particles[i].life <= 0) {
+        particles.removeAt(i);
+      } else {
+        canvas.drawCircle(particles[i].pos, 5, Paint()..color = particles[i].color.withOpacity(particles[i].life));
+      }
+    }
+
+    // 4. Paw Animations
+    for (int i = paws.length - 1; i >= 0; i--) {
+      final paw = paws[i];
+      paw.update();
+      if (paw.life <= 0) {
+        paws.removeAt(i);
+      } else {
+        _drawPaw(canvas, paw);
+      }
+    }
+  }
+
+  void _drawPaw(Canvas canvas, PawEffect paw) {
+    canvas.save();
+    // Aligned to middle of hole and moved slightly below
+    canvas.translate(paw.pos.dx, paw.pos.dy + 15);
+    
+    final pawColor = Colors.orange[400]!;
+    final padColor = Colors.pink[100]!;
+    
+    // Main Paw "Hand" - Centered vertically around (0, 0)
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(-40, -35, 80, 70),
+        const Radius.circular(30),
+      ),
+      Paint()..color = pawColor,
+    );
+    
+    // Toes
+    for (int i = 0; i < 3; i++) {
+      final x = (i - 1) * 35.0;
+      canvas.drawCircle(Offset(x, -45), 20, Paint()..color = pawColor);
+      canvas.drawCircle(Offset(x, -45), 12, Paint()..color = padColor);
+    }
+    
+    // Main Pad
+    canvas.drawCircle(const Offset(0, 0), 25, Paint()..color = padColor);
+    
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+class FishTankPainter extends CustomPainter {
+  final Offset touch;
+  final bool isTouching;
+  final double time;
+
+  static List<Fish> fish = [];
+  static List<Ripple> ripples = [];
+  static bool initialized = false;
+
+  FishTankPainter(this.touch, this.isTouching, this.time);
+
+  void _initialize(Size size) {
+    if (initialized) return;
+    for (int i = 0; i < 3; i++) {
+      fish.add(Fish(size));
+    }
+    initialized = true;
+  }
+
+  static void handleTap(Offset pos) {
+    ripples.add(Ripple(pos));
+    SoundService().playSplash();
+    HapticFeedback.mediumImpact();
+    
+    // Make fish dart away from tap
+    for (var f in fish) {
+      final dist = (f.pos - pos).distance;
+      if (dist < 220) {
+        final dir = (f.pos - pos).distance > 0 ? (f.pos - pos) / (f.pos - pos).distance : Offset.zero;
+        f.vel += dir * 12;
+      }
+    }
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    _initialize(size);
+
+    // 1. Water Background
+    final waterColor = const Color(0xFF00ACC1);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), Paint()..color = waterColor);
+    
+    // Soft caustics (moving light rays)
+    final causticPaint = Paint()..color = Colors.white.withOpacity(0.04)..maskFilter = const MaskFilter.blur(BlurStyle.normal, 25);
+    for(int i=0; i<6; i++) {
+       final x = (math.sin(time * 0.4 + i) * 0.5 + 0.5) * size.width;
+       final y = (math.cos(time * 0.2 + i) * 0.5 + 0.5) * size.height;
+       canvas.drawCircle(Offset(x, y), 120 + math.sin(time) * 30, causticPaint);
+    }
+
+    // 2. Update and Draw Ripples
+    for (int i = ripples.length - 1; i >= 0; i--) {
+      ripples[i].update();
+      if (ripples[i].life <= 0) {
+        ripples.removeAt(i);
+      } else {
+        canvas.drawCircle(
+          ripples[i].pos, 
+          ripples[i].radius, 
+          Paint()..color = Colors.white.withOpacity(ripples[i].life * 0.4)..style = PaintingStyle.stroke..strokeWidth = 3
+        );
+      }
+    }
+
+    // 3. Update and Draw Fish
+    for (var f in fish) {
+      f.update(size, time);
+      
+      canvas.save();
+      canvas.translate(f.pos.dx, f.pos.dy);
+      canvas.rotate(f.rotation);
+      
+      // Fish Body Gradient (3D look)
+      final bodyRect = Rect.fromCenter(center: Offset.zero, width: 26, height: 65);
+      final bodyPaint = Paint()
+        ..shader = RadialGradient(
+          colors: [
+            f.color.withOpacity(1.0),
+            Color.lerp(f.color, Colors.black, 0.2)!,
+          ],
+          center: const Alignment(-0.3, -0.2),
+        ).createShader(bodyRect);
+      
+      // Main Body Path (Tapered)
+      final bodyPath = Path();
+      bodyPath.moveTo(0, -32); // Head
+      bodyPath.quadraticBezierTo(15, -20, 10, 10); // Right side
+      bodyPath.quadraticBezierTo(5, 32, 0, 32);    // Tail base
+      bodyPath.quadraticBezierTo(-5, 32, -10, 10); // Left side
+      bodyPath.quadraticBezierTo(-15, -20, 0, -32); // Back to head
+      canvas.drawPath(bodyPath, bodyPaint);
+      
+      // Fins (Translucent with rays)
+      final finPaint = Paint()
+        ..color = f.color.withOpacity(0.4)
+        ..style = PaintingStyle.fill;
+      final rayPaint = Paint()
+        ..color = Colors.white.withOpacity(0.2)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.5;
+
+      final tailWave = math.sin(time * 12 + f.id) * 12;
+      
+      // Detailed Tail
+      final tailPath = Path();
+      tailPath.moveTo(0, 30);
+      tailPath.cubicTo(-20 + tailWave, 40, -15 + tailWave, 55, 0, 50 + tailWave.abs() * 0.2);
+      tailPath.cubicTo(15 + tailWave, 55, 20 + tailWave, 40, 0, 30);
+      canvas.drawPath(tailPath, finPaint);
+      
+      // Tail Rays
+      for (int i = -1; i <= 1; i++) {
+        canvas.drawLine(const Offset(0, 32), Offset(i * 12 + tailWave, 50), rayPaint);
+      }
+
+      // Pectoral Fins (Side fins)
+      canvas.save();
+      canvas.translate(-12, -5);
+      canvas.rotate(-math.pi / 4);
+      canvas.drawOval(const Rect.fromLTWH(0, 0, 20, 12), finPaint);
+      canvas.restore();
+      
+      canvas.save();
+      canvas.translate(12, -5);
+      canvas.rotate(math.pi / 4);
+      canvas.drawOval(const Rect.fromLTWH(-20, 0, 20, 12), finPaint);
+      canvas.restore();
+
+      // Realistic Eyes
+      final eyeBase = Paint()..color = Colors.white;
+      final pupil = Paint()..color = Colors.black;
+      canvas.drawCircle(const Offset(-8, -22), 4, eyeBase);
+      canvas.drawCircle(const Offset(8, -22), 4, eyeBase);
+      canvas.drawCircle(const Offset(-9, -23), 2, pupil);
+      canvas.drawCircle(const Offset(9, -23), 2, pupil);
+
+      // Spots (Pattern)
+      final spotPaint = Paint()..color = Colors.black.withOpacity(0.2);
+      canvas.drawCircle(const Offset(4, -5), 6, spotPaint);
+      canvas.drawCircle(const Offset(-3, 12), 4, spotPaint);
+
+      canvas.restore();
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+class Fish {
+  Offset pos;
+  Offset vel;
+  Color color;
+  double id;
+  double speedMultiplier;
+  double turnFrequency;
+  
+  Fish(Size size) 
+    : pos = Offset(math.Random().nextDouble() * size.width, math.Random().nextDouble() * size.height),
+      vel = Offset(math.Random().nextDouble() - 0.5, math.Random().nextDouble() - 0.5) * 2.5,
+      color = [Colors.orange[400]!, Colors.white, Colors.red[300]!][math.Random().nextInt(3)],
+      id = math.Random().nextDouble() * 100,
+      speedMultiplier = 0.8 + math.Random().nextDouble() * 1.5,
+      turnFrequency = 0.3 + math.Random().nextDouble() * 0.8,
+      rotation = 0;
+  double rotation;
+
+  void update(Size size, double time) {
+    // Diversified movement patterns
+    double angle = math.atan2(vel.dy, vel.dx);
+    angle += math.sin(time * turnFrequency + id) * 0.025; 
+    
+    double speed = vel.distance;
+    vel = Offset(math.cos(angle), math.sin(angle)) * speed;
+    
+    vel *= 0.99; // Drag
+    double maxSpeed = 3.0 * speedMultiplier;
+    if (speed > maxSpeed) vel = (vel / speed) * maxSpeed;
+    if (speed < 1.0) vel = (vel / speed) * 1.0;
+    
+    pos += vel;
+
+    // Smooth rotation interpolation
+    double targetRotation = math.atan2(vel.dy, vel.dx) + math.pi / 2;
+    double diff = targetRotation - rotation;
+    while (diff > math.pi) diff -= 2 * math.pi;
+    while (diff < -math.pi) diff += 2 * math.pi;
+    rotation += diff * 0.1;
+    
+    // Bounce off walls
+    const margin = 60.0;
+    if (pos.dx < margin) vel = Offset(vel.dx.abs(), vel.dy);
+    if (pos.dx > size.width - margin) vel = Offset(-vel.dx.abs(), vel.dy);
+    if (pos.dy < margin) vel = Offset(vel.dx, vel.dy.abs());
+    if (pos.dy > size.height - margin) vel = Offset(vel.dx, -vel.dy.abs());
+  }
+}
+
+class MouseHole {
+  Offset pos;
+  double popState = 0; // 0 to 1
+  bool isUp = false;
+  int stayUpUntil = 0;
+  int nextActionTime = 0;
+  MouseHole(this.pos);
+}
+
+class PawEffect {
+  Offset pos;
+  double life = 1.0;
+  PawEffect(this.pos);
+  void update() => life -= 0.05;
+}
+
+

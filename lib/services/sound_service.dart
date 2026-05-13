@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart';
+import 'package:vibration/vibration.dart';
 
 class SoundService {
   static final SoundService _instance = SoundService._internal();
@@ -12,33 +13,87 @@ class SoundService {
   // A pool of players to allow overlapping sounds
   final List<AudioPlayer> _playerPool = List.generate(8, (_) => AudioPlayer());
   int _currentPlayerIndex = 0;
-  
+
   String? _splatPath;
   String? _squeakPath;
   String? _laserPath;
   String? _splashPath;
+  String? _whackPath;
+  String? _thumpPath;
+  String? _scuffPath;
 
   Future<void> initialize() async {
     // 1. Optimize Global Audio Context
-    await AudioPlayer.global.setAudioContext(AudioContext(
-      android: AudioContextAndroid(
-        usageType: AndroidUsageType.game,
-        contentType: AndroidContentType.sonification,
-        audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+    await AudioPlayer.global.setAudioContext(
+      AudioContext(
+        android: AudioContextAndroid(
+          usageType: AndroidUsageType.game,
+          contentType: AndroidContentType.sonification,
+          audioFocus: AndroidAudioFocus.gainTransientMayDuck,
+        ),
+        iOS: AudioContextIOS(category: AVAudioSessionCategory.ambient),
       ),
-      iOS: AudioContextIOS(
-        category: AVAudioSessionCategory.ambient,
-      ),
-    ));
+    );
 
     // 2. Generate and Cache Synthetic Sounds as Local Files
-    // This is MUCH faster than sending bytes over platform channels repeatedly
     final tempDir = Directory.systemTemp;
-    
-    _splatPath = await _saveSyntheticWav(tempDir, 'splat.wav', 100, 350, 40, WaveType.sine);
-    _squeakPath = await _saveSyntheticWav(tempDir, 'squeak.wav', 60, 2500, 4500, WaveType.sine);
-    _laserPath = await _saveSyntheticWav(tempDir, 'laser.wav', 120, 1800, 300, WaveType.sawtooth);
-    _splashPath = await _saveSyntheticWav(tempDir, 'splash.wav', 200, 180, 80, WaveType.sine);
+
+    _splatPath = await _saveSyntheticWav(
+      tempDir,
+      'splat.wav',
+      100,
+      350,
+      40,
+      WaveType.sine,
+    );
+    _squeakPath = await _saveSyntheticWav(
+      tempDir,
+      'squeak.wav',
+      60,
+      2500,
+      4500,
+      WaveType.sine,
+    );
+    _laserPath = await _saveSyntheticWav(
+      tempDir,
+      'laser.wav',
+      120,
+      1800,
+      300,
+      WaveType.sawtooth,
+    );
+    _splashPath = await _saveSyntheticWav(
+      tempDir,
+      'splash.wav',
+      200,
+      180,
+      80,
+      WaveType.sine,
+    );
+    _whackPath = await _saveSyntheticWav(
+      tempDir,
+      'whack.wav',
+      150,
+      220,
+      60,
+      WaveType.sawtooth,
+    );
+    _thumpPath = await _saveSyntheticWav(
+      tempDir,
+      'thump.wav',
+      100,
+      150,
+      60,
+      WaveType.sine,
+    );
+    _scuffPath = await _saveSyntheticWav(
+      tempDir,
+      'scuff.wav',
+      50,
+      400,
+      200,
+      WaveType.noise,
+    );
 
     // 3. Pre-warm players and set Low Latency mode
     for (var player in _playerPool) {
@@ -46,8 +101,20 @@ class SoundService {
     }
   }
 
-  Future<String> _saveSyntheticWav(Directory dir, String name, int durationMs, double freqStart, double freqEnd, WaveType type) async {
-    final bytes = _createWavBuffer(durationMs: durationMs, frequencyStart: freqStart, frequencyEnd: freqEnd, type: type);
+  Future<String> _saveSyntheticWav(
+    Directory dir,
+    String name,
+    int durationMs,
+    double freqStart,
+    double freqEnd,
+    WaveType type,
+  ) async {
+    final bytes = _createWavBuffer(
+      durationMs: durationMs,
+      frequencyStart: freqStart,
+      frequencyEnd: freqEnd,
+      type: type,
+    );
     final file = File('${dir.path}/$name');
     await file.writeAsBytes(bytes);
     return file.path;
@@ -55,36 +122,51 @@ class SoundService {
 
   void _play(String? path, double volume) {
     if (path == null) return;
-    
+
     try {
       final player = _playerPool[_currentPlayerIndex];
       _currentPlayerIndex = (_currentPlayerIndex + 1) % _playerPool.length;
-      
-      // Fire and forget. We use standard mode to avoid native threading bugs on Windows.
       player.play(DeviceFileSource(path), volume: volume);
-    } catch (_) {
-      // Gracefully ignore audio engine hiccups on Windows
-    }
+    } catch (_) {}
+  }
+
+  void _vibrate(int duration) {
+    Vibration.vibrate(duration: duration);
   }
 
   void playSplat() {
-    _play(_splatPath, 0.5);
-    HapticFeedback.mediumImpact();
+    _play(_splatPath, 1.0);
+    _vibrate(60); // Reduced from 150
   }
 
   void playSqueak() {
-    _play(_squeakPath, 0.4);
-    HapticFeedback.lightImpact();
+    _play(_squeakPath, 0.9);
+    _vibrate(30); // Reduced from 60
   }
 
   void playLaserBlast() {
-    _play(_laserPath, 0.6);
-    HapticFeedback.heavyImpact();
+    _play(_laserPath, 1.0);
+    _vibrate(60); // Reduced from 120
   }
 
   void playSplash() {
-    _play(_splashPath, 0.3);
-    HapticFeedback.selectionClick();
+    _play(_splashPath, 0.8);
+    _vibrate(50); // Reduced from 100
+  }
+
+  void playWhack() {
+    _play(_whackPath, 1.0);
+    _vibrate(70); // Reduced from 180
+  }
+
+  void playThump() {
+    _play(_thumpPath, 0.7);
+    _vibrate(40); // Reduced from 80
+  }
+
+  void playScuff() {
+    _play(_scuffPath, 0.5);
+    _vibrate(25); // Reduced from 50
   }
 
   Uint8List _createWavBuffer({
@@ -101,22 +183,24 @@ class SoundService {
       final double t = i / numSamples;
       final double freq = frequencyStart + (frequencyEnd - frequencyStart) * t;
       final double phase = (2 * math.pi * freq * (i / sampleRate));
-      
+
       double sample = 0;
       switch (type) {
         case WaveType.sine:
           sample = math.sin(phase);
           break;
         case WaveType.sawtooth:
-          sample = 2 * (phase / (2 * math.pi) - (phase / (2 * math.pi) + 0.5).floor());
+          sample =
+              2 *
+              (phase / (2 * math.pi) - (phase / (2 * math.pi) + 0.5).floor());
           break;
         case WaveType.noise:
           sample = math.Random().nextDouble() * 2 - 1;
           break;
       }
 
-      final double envelope = math.pow(1.0 - t, 2).toDouble();
-      samples[i] = (sample * envelope * 28000).toInt();
+      final double envelope = math.pow(1.0 - t, 0.5).toDouble();
+      samples[i] = (sample * envelope * 32767).toInt();
     }
 
     return _createWavHeader(samples, sampleRate);
@@ -135,11 +219,11 @@ class SoundService {
     header.setUint8(9, 0x41); // A
     header.setUint8(10, 0x56); // V
     header.setUint8(11, 0x45); // E
-    
+
     header.setUint8(12, 0x66); // f
     header.setUint8(13, 0x6d); // m
     header.setUint8(14, 0x74); // t
-    header.setUint8(15, 0x20); //  
+    header.setUint8(15, 0x20); //
     header.setUint32(16, 16, Endian.little);
     header.setUint16(20, 1, Endian.little); // PCM
     header.setUint16(22, 1, Endian.little); // Mono
@@ -147,7 +231,7 @@ class SoundService {
     header.setUint32(28, sampleRate * 2, Endian.little);
     header.setUint16(32, 2, Endian.little);
     header.setUint16(34, 16, Endian.little);
-    
+
     header.setUint8(36, 0x64); // d
     header.setUint8(37, 0x61); // a
     header.setUint8(38, 0x74); // t
