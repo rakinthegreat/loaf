@@ -115,7 +115,7 @@ public class Updater {
     private static void showUpdateDialog(final Context context, String current, String latest, String url) {
         // ContextThemeWrapper applies Material theme ONLY to this dialog,
         // leaving Flutter's app theme completely untouched.
-        Context themedContext = new ContextThemeWrapper(context, R.style.HydroSyncDialog);
+        Context themedContext = new ContextThemeWrapper(context, R.style.LoafDialog);
         new MaterialAlertDialogBuilder(themedContext)
                 .setTitle("Update Available")
                 .setMessage("Loaf " + latest + " is ready.\nYou're on version " + current + ".")
